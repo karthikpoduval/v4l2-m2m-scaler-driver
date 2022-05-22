@@ -8,6 +8,7 @@
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <media/v4l2-mem2mem.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
@@ -41,6 +42,7 @@ struct m2m_scaler {
 	void __iomem		*mmio;
 	struct v4l2_m2m_dev	*m2m_dev;
 	struct mutex 		lock;
+	struct regmap		*regmap;
 };
 
 struct m2m_scaler_ctx {	
@@ -50,6 +52,12 @@ struct m2m_scaler_ctx {
 	uint64_t 		sequence;
 };
 
+static const struct regmap_config m2m_scaler_regmap_config = {
+	.reg_bits = 32,
+	.val_bits = 32,
+	.reg_stride = 32,
+	.fast_io = true,
+};
 
 static inline struct m2m_scaler_ctx *file2ctx(struct file *file)
 {
@@ -436,6 +444,12 @@ static int m2m_scaler_probe(struct platform_device *pdev)
 	device->mmio = devm_ioremap_resource(dev, res);
 	if (IS_ERR(device->mmio))
 		return PTR_ERR(device->mmio);
+
+	device->regmap = devm_regmap_init_mmio(dev, device->mmio, &m2m_scaler_regmap_config);
+	if(IS_ERR(device->regmap)) {
+		dev_err(dev, "regmap init failed\n");
+		return PTR_ERR(device->regmap);
+	}
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
