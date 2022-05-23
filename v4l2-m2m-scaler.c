@@ -32,6 +32,15 @@
 #define DEFAULT_WIDTH	(640)
 #define DEFAULT_HEIGHT	(480)
 
+/* registers */
+#define INPUT_CONFIGURATION1 (0x00)
+#define INPUT_CONFIGURATION2 (0x04)
+#define OUTPUT_CONFIGURATION1 (0x08)
+#define OUTPUT_CONFIGURATION2 (0x0C)
+#define INPUT_ADDR (0x10)
+#define OUTPUT_ADDR (0x14)
+#define CONTROL_AND_STATUS (0x18)
+
 static int debug;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "debug level (0-3)");
@@ -43,6 +52,18 @@ struct m2m_scaler {
 	struct v4l2_m2m_dev	*m2m_dev;
 	struct mutex 		lock;
 	struct regmap		*regmap;
+	struct regmap_field *input_width;
+	struct regmap_field *input_height;
+	struct regmap_field *input_stride;
+	struct regmap_field *output_width;
+	struct regmap_field *output_height;
+	struct regmap_field *output_stride;
+	struct regmap_field *input_addr;
+	struct regmap_field *output_addr;
+	struct regmap_field *start_processing;
+	struct regmap_field *enable_interrupts;
+	struct regmap_field *reset;
+	struct regmap_field *status;
 };
 
 struct m2m_scaler_ctx {	
@@ -59,11 +80,96 @@ static const struct regmap_config m2m_scaler_regmap_config = {
 	.fast_io = true,
 };
 
+static struct reg_field input_width = REG_FIELD(INPUT_CONFIGURATION1, 0,15);
+static struct reg_field input_height = REG_FIELD(INPUT_CONFIGURATION1, 16,31);
+static struct reg_field input_stride = REG_FIELD(INPUT_CONFIGURATION2, 0,15);
+static struct reg_field output_width = REG_FIELD(OUTPUT_CONFIGURATION1, 0,15);
+static struct reg_field output_height = REG_FIELD(OUTPUT_CONFIGURATION1, 16,31);
+static struct reg_field output_stride = REG_FIELD(OUTPUT_CONFIGURATION2, 0,15);
+static struct reg_field input_addr = REG_FIELD(INPUT_ADDR, 0,31);
+static struct reg_field output_addr = REG_FIELD(OUTPUT_ADDR, 0,31);
+static struct reg_field start_processing = REG_FIELD(CONTROL_AND_STATUS, 0,0);
+static struct reg_field enable_interrupts = REG_FIELD(CONTROL_AND_STATUS, 1,1);
+static struct reg_field reset = REG_FIELD(CONTROL_AND_STATUS, 2,2);
+static struct reg_field status = REG_FIELD(CONTROL_AND_STATUS, 3,4);
+
+#define REG_FIELD_ALLOC(REGMAP_FIELD, REG_FIELD) \
+	device->REGMAP_FIELD =  devm_regmap_field_alloc(dev, device->regmap, REG_FIELD);\
+	if(ISS_ERR(device->REGMAP_FIELD)) { \
+		return PTR_ERR(device->REGMAP_FIELD); \
+	}
+
+#define RFA(NAME) REG_FIELD_ALLOC(NAME, NAME)
+
+static int m2m_scaler_regfield_alloc(struct device *dev, struct m2m_scaler *device)
+{
+	device->input_width = devm_regmap_field_alloc(dev, device->regmap, input_width);
+	if(IS_ERR(device->input_width)) {
+		return PTR_ERR(device->input_width);
+	}
+
+	device->input_height = devm_regmap_field_alloc(dev, device->regmap, input_height);
+	if(IS_ERR(device->input_height)) {
+		return PTR_ERR(device->input_height);
+	}
+	
+	device->input_stride = devm_regmap_field_alloc(dev, device->regmap, input_stride);
+	if(IS_ERR(device->input_stride)) {
+		return PTR_ERR(device->input_stride);
+	}
+
+	device->output_width = devm_regmap_field_alloc(dev, device->regmap, output_width);
+	if(IS_ERR(device->output_width)) {
+		return PTR_ERR(device->output_width);
+	}
+
+	device->output_height = devm_regmap_field_alloc(dev, device->regmap, output_height);
+	if(IS_ERR(device->output_height)) {
+		return PTR_ERR(device->output_height);
+	}
+	
+	device->output_stride = devm_regmap_field_alloc(dev, device->regmap, output_stride);
+	if(IS_ERR(device->output_stride)) {
+		return PTR_ERR(device->output_stride);
+	}
+
+	device->input_addr = devm_regmap_field_alloc(dev, device->regmap, input_addr);
+	if(IS_ERR(device->input_addr)) {
+		return PTR_ERR(device->input_addr);
+	}
+
+	device->output_addr = devm_regmap_field_alloc(dev, device->regmap, output_addr);
+	if(IS_ERR(device->output_addr)) {
+		return PTR_ERR(device->output_addr);
+	}
+
+	device->start_processing = devm_regmap_field_alloc(dev, device->regmap, start_processing);
+	if(IS_ERR(device->start_processing)) {
+		return PTR_ERR(device->start_processing);
+	}
+	
+	device->enable_interrupts = devm_regmap_field_alloc(dev, device->regmap, enable_interrupts);
+	if(IS_ERR(device->enable_interrupts)) {
+		return PTR_ERR(device->enable_interrupts);
+	}
+
+	device->reset = devm_regmap_field_alloc(dev, device->regmap, reset);
+	if(IS_ERR(device->reset)) {
+		return PTR_ERR(device->reset);
+	}
+	
+	device->status = devm_regmap_field_alloc(dev, device->regmap, status);
+	if(IS_ERR(device->status)) {
+		return PTR_ERR(device->status);
+	}
+
+	return 0;
+}
+
 static inline struct m2m_scaler_ctx *file2ctx(struct file *file)
 {
 	return container_of(file->private_data, struct m2m_scaler_ctx, fh);
 }
-
 
 /*
  * mem2mem callbacks
@@ -449,6 +555,10 @@ static int m2m_scaler_probe(struct platform_device *pdev)
 	if(IS_ERR(device->regmap)) {
 		dev_err(dev, "regmap init failed\n");
 		return PTR_ERR(device->regmap);
+	}
+	if(m2m_scaler_regfield_alloc(dev, device)) {
+		dev_err(dev, "reg field alloc failed\n");
+		return -ENODEV;
 	}
 
 	irq = platform_get_irq(pdev, 0);
