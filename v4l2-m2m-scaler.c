@@ -41,9 +41,14 @@
 #define OUTPUT_ADDR (0x14)
 #define CONTROL_AND_STATUS (0x18)
 
+#define STATUS_DONE	BIT(2)
+#define STATUS_DONE_ERROR BIT(3)
+
 static int debug;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "debug level (0-3)");
+
+struct m2m_scaler_ctx;
 
 struct m2m_scaler {
 	struct v4l2_device	v4l2_dev;
@@ -92,14 +97,6 @@ static struct reg_field start_processing = REG_FIELD(CONTROL_AND_STATUS, 0,0);
 static struct reg_field enable_interrupts = REG_FIELD(CONTROL_AND_STATUS, 1,1);
 static struct reg_field reset = REG_FIELD(CONTROL_AND_STATUS, 2,2);
 static struct reg_field status = REG_FIELD(CONTROL_AND_STATUS, 3,4);
-
-#define REG_FIELD_ALLOC(REGMAP_FIELD, REG_FIELD) \
-	device->REGMAP_FIELD =  devm_regmap_field_alloc(dev, device->regmap, REG_FIELD);\
-	if(ISS_ERR(device->REGMAP_FIELD)) { \
-		return PTR_ERR(device->REGMAP_FIELD); \
-	}
-
-#define RFA(NAME) REG_FIELD_ALLOC(NAME, NAME)
 
 static int m2m_scaler_regfield_alloc(struct device *dev, struct m2m_scaler *device)
 {
@@ -177,16 +174,75 @@ static inline struct m2m_scaler_ctx *file2ctx(struct file *file)
 static void m2m_scaler_device_run(void *priv)
 {
 	struct m2m_scaler_ctx *ctx = priv;
+	struct m2m_scaler *device = ctx->device;
 	struct vb2_v4l2_buffer *src_buf, *dst_buf;
+	dma_addr_t input_addr, output_addr;
+	uint16_t iwidth, iheight, istride;
+	uint16_t owidth, oheight, ostride;
 
 	src_buf = v4l2_m2m_next_src_buf(ctx->fh.m2m_ctx);
 	dst_buf = v4l2_m2m_next_dst_buf(ctx->fh.m2m_ctx);
 
-	/* program the scaler to start */
+	/* program the scaler*/
+
+	/* reset the m2m scaler HW */
+	regmap_field_write(device->reset, 1);
+
+	/* program rresolution info */
+	iwidth = ctx->fmt[FMT_OUTPUT].fmt.pix.width;
+	iheight = ctx->fmt[FMT_OUTPUT].fmt.pix.height;
+	istride = iwidth*3;
+	regmap_field_write(device->input_width, iwidth);
+	regmap_field_write(device->input_height, iheight);
+	regmap_field_write(device->input_stride, istride);
+
+	owidth = ctx->fmt[FMT_CAPTURE].fmt.pix.width;
+	oheight = ctx->fmt[FMT_CAPTURE].fmt.pix.height;
+	ostride = owidth*3;
+	regmap_field_write(device->output_width, owidth);
+	regmap_field_write(device->output_height, oheight);
+	regmap_field_write(device->output_stride, ostride);
+
+	/* program dma addresses */
+        input_addr = vb2_dma_contig_plane_dma_addr(&src_buf->vb2_buf, 0);
+        output_addr = vb2_dma_contig_plane_dma_addr(&dst_buf->vb2_buf, 0);
+	regmap_field_write(device->input_addr, input_addr);
+	regmap_field_write(device->output_addr, output_addr);
+
+	/* start processing */
+	regmap_field_write(device->start_processing, 1);	
 }
 
 static irqreturn_t m2m_scaler_irq_handler(int irq, void *dev_id)
 {
+	struct m2m_scaler *device = (struct m2m_scaler *)dev_id;
+	struct m2m_scaler_ctx *curr_ctx;
+	struct vb2_v4l2_buffer *src_vb, *dst_vb;
+	uint32_t status;
+	int vb2_status;
+
+	curr_ctx = (struct m2m_scaler_ctx*) v4l2_m2m_get_curr_priv(device->m2m_dev);
+	if(curr_ctx) {
+		regmap_field_read(device->status, &status);
+		switch(status) {
+			case STATUS_DONE:
+				vb2_status = VB2_BUF_STATE_DONE;
+				break;
+
+			case STATUS_DONE_ERROR:
+			default:
+				vb2_status = VB2_BUF_STATE_ERROR;		
+
+		}
+
+		/* return the src and dst buffers back to V4L2 M2M layer to return to application */
+	        src_vb = v4l2_m2m_src_buf_remove(curr_ctx->fh.m2m_ctx);
+	        dst_vb = v4l2_m2m_dst_buf_remove(curr_ctx->fh.m2m_ctx);	
+	        v4l2_m2m_buf_done(src_vb, vb2_status);
+	        v4l2_m2m_buf_done(dst_vb, vb2_status);
+		v4l2_m2m_job_finish(device->m2m_dev, curr_ctx->fh.m2m_ctx);
+
+	}
 
 	return IRQ_HANDLED;
 }
