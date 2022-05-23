@@ -595,8 +595,9 @@ static int m2m_scaler_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct resource *res;
 	struct video_device *vfd;
+	struct v4l2_device *v4l2_dev = &device->v4l2_dev;
 	int irq;
-	int ret;
+	int ret = 0;
 
 	device = devm_kzalloc(dev, sizeof(*device), GFP_KERNEL);
 	if(!device)
@@ -649,9 +650,26 @@ static int m2m_scaler_probe(struct platform_device *pdev)
 	snprintf(vfd->name, sizeof(vfd->name), "%s", MEM2MEM_NAME);
 
 	device->m2m_dev = v4l2_m2m_init(&m2m_ops);
+	if (IS_ERR(device->m2m_dev)) {
+		v4l2_err(v4l2_dev, "Failed to init mem2mem device\n");
+		ret = PTR_ERR(device->m2m_dev);
+		goto err_v4l2;
+	}
 
+	ret = video_register_device(vfd, VFL_TYPE_VIDEO, 0);
+        if (ret) {
+		v4l2_err(v4l2_dev, "Failed to register video device\n");
+		goto err_m2m;
+	}
+	
 	regmap_field_write(device->enable_interrupts, 1);
-	return 0;
+
+err_m2m:
+	v4l2_m2m_release(device->m2m_dev);
+err_v4l2:
+	v4l2_device_unregister(&device->v4l2_dev);
+
+	return ret;
 }
 
 static int m2m_scaler_remove(struct platform_device *pdev)
