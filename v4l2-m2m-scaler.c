@@ -15,6 +15,7 @@
 #include <media/v4l2-common.h>
 #include <media/videobuf2-dma-contig.h>
 #include <media/v4l2-event.h>
+#include <media/videobuf2-v4l2.h>
 
 
 #define MEM2MEM_NAME		"virtual-v4l2-m2m-scaler"
@@ -56,6 +57,9 @@ struct m2m_scaler {
 	void __iomem		*mmio;
 	struct v4l2_m2m_dev	*m2m_dev;
 	struct mutex 		lock;
+#ifdef CONFIG_MEDIA_CONTROLLER
+	struct media_device	mdev;
+#endif
 	struct regmap		*regmap;
 	struct regmap_field *input_width;
 	struct regmap_field *input_height;
@@ -589,6 +593,13 @@ static const struct v4l2_m2m_ops m2m_ops = {
 	.device_run	= m2m_scaler_device_run,
 };
 
+#ifdef CONFIG_MEDIA_CONTROLLER
+static struct media_device_ops m2m_media_ops = {
+	.req_validate = vb2_request_validate,
+	.req_queue = v4l2_m2m_request_queue,
+};
+#endif
+
 static int m2m_scaler_probe(struct platform_device *pdev)
 {
 	struct m2m_scaler *device;
@@ -664,6 +675,29 @@ static int m2m_scaler_probe(struct platform_device *pdev)
 	
 	regmap_field_write(device->enable_interrupts, 1);
 
+#ifdef CONFIG_MEDIA_CONTROLLER
+	device->mdev.dev = &pdev->dev;
+	strscpy(device->mdev.model, MEM2MEM_NAME, sizeof(device->mdev.model));
+	strscpy(device->mdev.bus_info, "platform:m2m-scaler", sizeof(device->mdev.bus_info));
+	media_device_init(&device->mdev);
+	device->mdev.ops = &m2m_media_ops;
+	device->v4l2_dev.mdev = &device->mdev;
+
+	ret = v4l2_m2m_register_media_controller(device->m2m_dev, vfd, MEDIA_ENT_F_PROC_VIDEO_COMPOSER);
+	if(ret) {
+		v4l2_err(v4l2_dev, "Failed to init media controller\n");
+		goto err_m2m;
+	}
+
+	ret = media_device_register(&device->mdev);
+	if(ret) {
+		v4l2_err(v4l2_dev, "Failed to register media device\n");
+		goto err_m2m;
+	}
+#endif
+
+	return 0;
+
 err_m2m:
 	v4l2_m2m_release(device->m2m_dev);
 err_v4l2:
@@ -676,6 +710,11 @@ static int m2m_scaler_remove(struct platform_device *pdev)
 {
 	struct m2m_scaler *device = platform_get_drvdata(pdev);
 
+#ifdef CONFIG_MEDIA_CONTROLLER
+	media_device_unregister(&device->mdev);
+	v4l2_m2m_unregister_media_controller(device->m2m_dev);
+	media_device_cleanup(&device->mdev);
+#endif
 	video_unregister_device(&device->video_dev);
         v4l2_m2m_release(device->m2m_dev);
         v4l2_device_unregister(&device->v4l2_dev);
