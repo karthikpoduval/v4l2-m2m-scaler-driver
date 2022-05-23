@@ -650,11 +650,17 @@ static int m2m_scaler_probe(struct platform_device *pdev)
 
 	device->m2m_dev = v4l2_m2m_init(&m2m_ops);
 
+	regmap_field_write(device->enable_interrupts, 1);
 	return 0;
 }
 
 static int m2m_scaler_remove(struct platform_device *pdev)
 {
+	struct m2m_scaler *device = platform_get_drvdata(pdev);
+
+	video_unregister_device(&device->video_dev);
+        v4l2_m2m_release(device->m2m_dev);
+        v4l2_device_unregister(&device->v4l2_dev);
 
 	return 0;
 }
