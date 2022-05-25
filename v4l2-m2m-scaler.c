@@ -18,7 +18,7 @@
 #include <media/videobuf2-v4l2.h>
 
 
-#define MEM2MEM_NAME		"virtual-v4l2-m2m-scaler"
+#define MEM2MEM_NAME		"m2ms"
 
 // the only suported format by M2M Scaler
 #define FORMAT V4L2_PIX_FMT_RGB24
