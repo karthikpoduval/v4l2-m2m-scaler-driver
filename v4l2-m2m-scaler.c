@@ -292,6 +292,7 @@ static int m2m_scaler_try_fmt(struct file *file, void*priv, struct v4l2_format *
 	if(f->fmt.pix.height > MAX_HEIGHT)
 		f->fmt.pix.width = MAX_HEIGHT;
 
+	f->fmt.pix.sizeimage = f->fmt.pix.width * f->fmt.pix.height * 3; //For the supported RGB format 
 	return 0;
 }
 static int m2m_scaler_enum_fmt(struct file *file, void *priv,
@@ -634,7 +635,7 @@ static int m2m_scaler_probe(struct platform_device *pdev)
 		return irq;
 
 	ret = devm_request_threaded_irq(dev, irq, NULL, m2m_scaler_irq_handler,
-			IRQF_ONESHOT, dev_name(dev), dev);
+			IRQF_ONESHOT, dev_name(dev), device);
 	if (ret < 0) {
 		dev_err(dev, "Failed to request irq: %d\n", ret);
 		return ret;
