@@ -85,8 +85,9 @@ struct m2m_scaler_ctx {
 static const struct regmap_config m2m_scaler_regmap_config = {
 	.reg_bits = 32,
 	.val_bits = 32,
-	.reg_stride = 32,
+	.reg_stride = 4,
 	.fast_io = true,
+	.cache_type = REGCACHE_NONE,
 };
 
 static struct reg_field input_width = REG_FIELD(INPUT_CONFIGURATION1, 0,15);
@@ -183,6 +184,7 @@ static void m2m_scaler_device_run(void *priv)
 	dma_addr_t input_addr, output_addr;
 	uint16_t iwidth, iheight, istride;
 	uint16_t owidth, oheight, ostride;
+	struct v4l2_device *v4l2_dev = &device->v4l2_dev;
 
 	src_buf = v4l2_m2m_next_src_buf(ctx->fh.m2m_ctx);
 	dst_buf = v4l2_m2m_next_dst_buf(ctx->fh.m2m_ctx);
@@ -192,7 +194,7 @@ static void m2m_scaler_device_run(void *priv)
 	/* reset the m2m scaler HW */
 	regmap_field_write(device->reset, 1);
 
-	/* program rresolution info */
+	/* program resolution info */
 	iwidth = ctx->fmt[FMT_OUTPUT].fmt.pix.width;
 	iheight = ctx->fmt[FMT_OUTPUT].fmt.pix.height;
 	istride = iwidth*3;
@@ -206,6 +208,9 @@ static void m2m_scaler_device_run(void *priv)
 	regmap_field_write(device->output_width, owidth);
 	regmap_field_write(device->output_height, oheight);
 	regmap_field_write(device->output_stride, ostride);
+
+	v4l2_dbg(1, debug, v4l2_dev, "%s:iw=%d ih=%d is=%d\n", __func__, iwidth, iheight, istride); 
+	v4l2_dbg(1, debug, v4l2_dev, "%s:ow=%d oh=%d os=%d\n", __func__, owidth, oheight, ostride); 
 
 	/* program dma addresses */
         input_addr = vb2_dma_contig_plane_dma_addr(&src_buf->vb2_buf, 0);
