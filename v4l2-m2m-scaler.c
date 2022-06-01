@@ -209,8 +209,8 @@ static void m2m_scaler_device_run(void *priv)
 	regmap_field_write(device->output_height, oheight);
 	regmap_field_write(device->output_stride, ostride);
 
-	v4l2_dbg(1, debug, v4l2_dev, "%s:iw=%d ih=%d is=%d\n", __func__, iwidth, iheight, istride); 
-	v4l2_dbg(1, debug, v4l2_dev, "%s:ow=%d oh=%d os=%d\n", __func__, owidth, oheight, ostride); 
+	v4l2_dbg(1, debug, v4l2_dev, "%s:iw=%d ih=%d is=%d\n", __func__, iwidth, iheight, istride);
+	v4l2_dbg(1, debug, v4l2_dev, "%s:ow=%d oh=%d os=%d\n", __func__, owidth, oheight, ostride);
 
 	/* program dma addresses */
         input_addr = vb2_dma_contig_plane_dma_addr(&src_buf->vb2_buf, 0);
