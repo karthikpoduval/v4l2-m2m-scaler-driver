@@ -244,9 +244,11 @@ static irqreturn_t m2m_scaler_irq_handler(int irq, void *dev_id)
 
 		}
 
+
 		/* return the src and dst buffers back to V4L2 M2M layer to return to application */
 	        src_vb = v4l2_m2m_src_buf_remove(curr_ctx->fh.m2m_ctx);
 	        dst_vb = v4l2_m2m_dst_buf_remove(curr_ctx->fh.m2m_ctx);	
+		src_vb->sequence = dst_vb->sequence = curr_ctx->sequence++;
 	        v4l2_m2m_buf_done(src_vb, vb2_status);
 	        v4l2_m2m_buf_done(dst_vb, vb2_status);
 		v4l2_m2m_job_finish(device->m2m_dev, curr_ctx->fh.m2m_ctx);
@@ -379,9 +381,6 @@ static const struct v4l2_ioctl_ops m2m_scaler_ioctl_ops = {
 
 	.vidioc_streamon	= v4l2_m2m_ioctl_streamon,
 	.vidioc_streamoff	= v4l2_m2m_ioctl_streamoff,
-
-	//.vidioc_subscribe_event = v4l2_ctrl_subscribe_event,
-	//.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
 
 
