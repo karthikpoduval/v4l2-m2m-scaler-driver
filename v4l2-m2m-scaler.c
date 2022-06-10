@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Virtual (QEMU based) mem-2-mem scaler device driver
- * based on ima-m2m_scaler.c
+ * based on imx-pxp.c
  *
  * Copyright (c) 2022 Karthik Poduval <karthik.poduval@gmail.com>
  */
